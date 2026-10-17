@@ -143,26 +143,44 @@ out center tags;
 """
 
 
+
 async def _overpass_gyms(lat: float, lng: float, radius_m: int) -> List[dict]:
     """
-    POST the Overpass query with one automatic retry on HTTP 429.
-    Waits 4 seconds before retrying to respect the rate-limit window.
-    Raises RuntimeError on persistent failure so the router returns a 502.
+    Query Overpass with retries for transient connection failures,
+    timeouts, and HTTP 429 responses.
     """
     query = _build_query(lat, lng, radius_m)
+    last_error = None
 
     async with httpx.AsyncClient(timeout=40, headers=_HEADERS) as client:
-        resp = await client.post(_OVERPASS_URL, data={"data": query})
+        for attempt in range(3):
+            try:
+                resp = await client.post(
+                    _OVERPASS_URL,
+                    data={"data": query},
+                )
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    if attempt < 2:
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
 
-        if resp.status_code == 429:
-            # Rate-limited — wait and retry once
-            await asyncio.sleep(4)
-            resp = await client.post(_OVERPASS_URL, data={"data": query})
+                if resp.status_code != 200:
+                    raise RuntimeError(
+                        f"Overpass API error: HTTP {resp.status_code}"
+                    )
 
-        if resp.status_code != 200:
-            raise RuntimeError(f"Overpass API error: HTTP {resp.status_code}")
+                return resp.json().get("elements", [])
 
-    return resp.json().get("elements", [])
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                last_error = exc
+                if attempt < 2:
+                    await asyncio.sleep(2 * (attempt + 1))
+                else:
+                    break
+
+    raise RuntimeError(
+        "Overpass service is unreachable after 3 attempts. Please try again later."
+    ) from last_error
 
 
 def _parse_overpass_element(
