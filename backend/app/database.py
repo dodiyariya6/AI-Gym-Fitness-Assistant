@@ -43,6 +43,18 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Pin the Postgres driver explicitly. A bare "postgresql://" URL lets
+# SQLAlchemy pick the default driver, and that default changed between
+# versions (psycopg2 in 2.0.x, psycopg v3 in 2.1+). We ship psycopg2-binary,
+# so name it here. URLs that already name a driver (e.g. +psycopg) and
+# non-Postgres URLs (e.g. the SQLite URL used by the tests) are left alone.
+# This must run BEFORE create_engine() below.
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 
 engine = create_engine(
     DATABASE_URL,
