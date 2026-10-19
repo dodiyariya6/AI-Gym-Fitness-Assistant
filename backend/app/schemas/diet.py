@@ -70,23 +70,25 @@ class MacroResponse(BaseModel):
 
 
 class MealPlanRequest(BaseModel):
-    age: int = Field(gt=0)
-    gender: str  # "male" | "female" | "non-binary"
-    weight: float = Field(gt=0)
-    height: float = Field(gt=0)
-    goal: str
-    diet_type: str
+    # Bounds keep absurd values (and unbounded free text) out of the Gemini
+    # prompt. age matches the Profile page's own 10-120 cap.
+    age: int = Field(gt=0, le=120)
+    gender: str = Field(min_length=1, max_length=30)  # "male" | "female" | "non-binary"
+    weight: float = Field(gt=0, le=500)
+    height: float = Field(gt=0, le=300)
+    goal: str = Field(min_length=1, max_length=100)
+    diet_type: str = Field(min_length=1, max_length=100)
 
     # Optional — populated from the user's Profile when available (activity
     # level, and the calorie_goal already computed by profile_service's
     # calculate_targets()). Neither is required, so requests from users
     # without a saved profile behave exactly as before.
-    activity_level: Optional[str] = None
-    target_calories: Optional[int] = None
+    activity_level: Optional[str] = Field(default=None, max_length=50)
+    target_calories: Optional[int] = Field(default=None, gt=0, le=10000)
 
 
 class GroceryRequest(BaseModel):
-    meal_plan: str
+    meal_plan: str = Field(min_length=1, max_length=10000)
 
     # Optional — when the caller already has a persisted MealPlan (every
     # generated plan is persisted, see /diet/meal-plan), pass its id so the

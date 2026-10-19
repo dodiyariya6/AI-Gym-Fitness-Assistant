@@ -129,3 +129,19 @@ def auth_headers():
         return {"Authorization": f"Bearer {token}"}
 
     return _headers
+
+
+@pytest.fixture(autouse=True)
+def _reset_process_state():
+    """
+    Rate-limit counters and the insight cache live in process memory, so
+    without this they leak between tests: user ids restart at 1 for every
+    test, and tokens minted in the same second are identical strings.
+    """
+    from app.routers import auth, diet, fitness_chat
+    from app.services import ai_insight_service
+
+    for module in (auth, diet, fitness_chat):
+        module.limiter.reset()
+    ai_insight_service._insight_cache.clear()
+    yield
