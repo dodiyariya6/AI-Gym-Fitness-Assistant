@@ -55,6 +55,12 @@ from app.schemas.insight import AIInsight, AIInsightList, InsightsResponse
 
 CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours — see module docstring.
 
+# A fallback result means Gemini failed. Cache it only briefly: long enough
+# that a Gemini outage doesn't make every page load wait out the 20s
+# timeout again, short enough that users get AI insights back soon after
+# Gemini recovers.
+FALLBACK_CACHE_TTL_SECONDS = 5 * 60
+
 # Keyed by user_id. Kept in-process and unbounded-but-tiny (one row per
 # active user) — appropriate for this project's single-instance deployment.
 # Deliberately not a database table or Redis: the simplest mechanism that
@@ -229,7 +235,11 @@ async def generate_insights(db, user_id: int, first_name: str | None = None) -> 
     now = datetime.now(timezone.utc)
     context_hash = _context_hash(wellness_breakdown, overload_findings, correlation_findings, context)
     cached = _insight_cache.get(user_id)
-    if cached and cached["hash"] == context_hash and (now - cached["ts"]) < timedelta(seconds=CACHE_TTL_SECONDS):
+    if (
+        cached
+        and cached["hash"] == context_hash
+        and (now - cached["ts"]) < timedelta(seconds=cached.get("ttl", CACHE_TTL_SECONDS))
+    ):
         return cached["data"]
 
     try:
@@ -262,5 +272,6 @@ async def generate_insights(db, user_id: int, first_name: str | None = None) -> 
             source="fallback",
         )
 
-    _insight_cache[user_id] = {"hash": context_hash, "ts": now, "data": response}
+    ttl = CACHE_TTL_SECONDS if response.source == "ai" else FALLBACK_CACHE_TTL_SECONDS
+    _insight_cache[user_id] = {"hash": context_hash, "ts": now, "ttl": ttl, "data": response}
     return response
