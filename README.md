@@ -175,8 +175,6 @@ Gym Finder combines nearby gym results with location-based discovery.
 
 ![Gym Finder](screenshots/gym-fnder.png)
 
-> The filename `gym-fnder.png` is intentionally written as it exists in the repository. Do not rename the reference unless the image file itself is renamed.
-
 ### 11. Profile
 
 The Profile page stores the personal and fitness information used by relevant features.
