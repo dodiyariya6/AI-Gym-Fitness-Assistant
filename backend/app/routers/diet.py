@@ -32,7 +32,11 @@ Reports system
 ==================================================
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import hashlib
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -56,6 +60,22 @@ from app.services.gemini_service import (
 )
 from app.services.auth_service import get_current_user
 
+
+
+def _gemini_rate_limit_key(request: Request) -> str:
+    # Keyed per login token rather than per IP. These routes already require
+    # a valid token, and behind Render's proxy get_remote_address() may see
+    # one shared proxy IP for every visitor, which would make an IP-keyed
+    # limit throttle all users together.
+    auth = request.headers.get("authorization")
+    if auth:
+        # Hash it so a live login token is never stored as a limiter key.
+        return hashlib.sha256(auth.encode("utf-8")).hexdigest()
+    return get_remote_address(request)
+
+
+# Same per-router Limiter pattern as auth.py and fitness_chat.py.
+limiter = Limiter(key_func=_gemini_rate_limit_key)
 router = APIRouter(prefix="/diet", tags=["Diet"])
 
 
@@ -86,7 +106,9 @@ def macros(data: DietInput):
 
 
 @router.post("/meal-plan", response_model=MealPlanResponse)
+@limiter.limit("5/minute;40/hour")
 async def meal_plan(
+    request: Request,
     data: MealPlanRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -125,7 +147,9 @@ async def meal_plan(
 
 
 @router.post("/grocery-list")
+@limiter.limit("10/minute;60/hour")
 async def grocery_list(
+    request: Request,
     data: GroceryRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),

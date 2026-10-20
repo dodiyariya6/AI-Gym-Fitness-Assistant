@@ -45,11 +45,37 @@ from app.models.user import User
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+# Secrets that are publicly known — committed in this repo's .env.example, or
+# used as the old hard-coded fallback. A deployment signing tokens with one of
+# these would let anyone forge a login, so startup refuses them.
+_KNOWN_PUBLIC_SECRETS = frozenset(
+    {
+        "change_this_to_a_secure_random_secret_key_32bytes_plus",
+        "fallback_dev_secret_key_change_in_production",
+    }
+)
 
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY environment variable must be set")
-    
+
+def _load_secret_key(raw):
+    """
+    Returns the JWT signing key, or raises RuntimeError if it is missing,
+    blank, or a known public placeholder.
+
+    The value is returned EXACTLY as given — never stripped. Stripping would
+    change the HMAC key and invalidate every token already issued.
+    """
+    if raw is None or not raw.strip():
+        raise RuntimeError("SECRET_KEY environment variable must be set")
+    if raw.strip() in _KNOWN_PUBLIC_SECRETS:
+        raise RuntimeError(
+            "SECRET_KEY is set to a publicly known placeholder. Generate a real "
+            'one: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
+    return raw
+
+
+SECRET_KEY = _load_secret_key(os.getenv("SECRET_KEY"))
+
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
